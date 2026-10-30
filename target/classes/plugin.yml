@@ -1,0 +1,11 @@
+name: AABarriers
+version: '0.1'
+main: me.fiveave.aabarriers.main
+api-version: '1.21'
+description: Automatic Arm Barriers (vibe-coded plugin)
+author: 5_AvenueLocal
+commands:
+  aabarriers:
+    description: AABarriers Main Commands
+    usage: /aabarriers
+    aliases: [ aab ]

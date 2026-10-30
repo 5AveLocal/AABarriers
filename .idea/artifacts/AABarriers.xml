@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="AABarriers">
+    <output-path>$PROJECT_DIR$/jars/</output-path>
+    <root id="archive" name="AABarriers.jar">
+      <element id="module-output" name="AABarriers" />
+    </root>
+  </artifact>
+</component>
