@@ -73,8 +73,11 @@ public class transformer {
                         bd.setInterpolationDelay(0);
                     });
 
+                    // --- Inside transformer.java -> scanAndSpawn loop ---
                     barrierParts.put(display, initialTranslation);
-                    block.setType(Material.AIR);
+
+                    // --- CRITICAL FIX: Change block.setType(Material.AIR) to prevent neighbor state updates ---
+                    block.setBlockData(org.bukkit.Bukkit.createBlockData(Material.AIR), false);
                 }
             }
         }

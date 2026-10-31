@@ -230,6 +230,7 @@ public class barrier {
         if (main.gateStorage.dataconfig.contains(blockSectionPath)) {
             var blockSection = main.gateStorage.dataconfig.getConfigurationSection(blockSectionPath);
             if (blockSection != null) {
+
                 for (String compositeCoord : blockSection.getKeys(false)) {
                     String[] coords = compositeCoord.split("_");
                     int x = Integer.parseInt(coords[0]);
@@ -239,15 +240,38 @@ public class barrier {
                     String rawBlockDataStr = main.gateStorage.dataconfig.getString(blockSectionPath + "." + compositeCoord + ".data");
                     if (rawBlockDataStr != null && gate.getWorld() != null) {
                         Block b = gate.getWorld().getBlockAt(x, y, z);
-                        b.setBlockData(plugin.getServer().createBlockData(rawBlockDataStr), true);
+
+                        org.bukkit.block.data.BlockData preciseData = plugin.getServer().createBlockData(rawBlockDataStr);
+
+                        // --- CRITICAL FIX: Use the complete block data string, but send NO physics updates (flag 0) ---
+                        // Flag 2 (1 << 1) edits block data natively on the server without triggering block-neighbor update cascades.
+                        // Flag 1 (1 << 0) sends a block change packet immediately to client screens.
+                        // Combining them as (false) or using direct state applications locks it in cleanly.
+                        b.setBlockData(preciseData, false);
                     }
                 }
             }
         }
 
+
         main.gateStorage.dataconfig.set("gates." + gate.getKey(), null);
         main.gateStorage.save();
     }
+
+    private void restoreSingleBlockInternal(org.bukkit.World world, String sectionPath, String coordinateKey) {
+        String rawBlockDataStr = main.gateStorage.dataconfig.getString(sectionPath + "." + coordinateKey + ".data");
+        if (rawBlockDataStr != null && world != null) {
+            String[] coords = coordinateKey.split("_");
+            int x = Integer.parseInt(coords[0]);
+            int y = Integer.parseInt(coords[1]);
+            int z = Integer.parseInt(coords[2]);
+
+            org.bukkit.block.Block b = world.getBlockAt(x, y, z);
+            // Re-apply standard physics updates (true) now that neighbors are in a predictable order
+            b.setBlockData(plugin.getServer().createBlockData(rawBlockDataStr), true);
+        }
+    }
+
 
     private void clearAndAdvanceSequence(String gateKey) {
         List<BukkitTask> associatedTasks = activeTempTasks.remove(gateKey);
