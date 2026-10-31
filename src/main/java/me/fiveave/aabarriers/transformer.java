@@ -22,6 +22,9 @@ public class transformer {
         int minZ = Math.min(gate.getStart().getBlockZ(), gate.getEnd().getBlockZ());
         int maxZ = Math.max(gate.getStart().getBlockZ(), gate.getEnd().getBlockZ());
 
+        // Determine axis direction for correct initial spawning offset sizing
+        boolean isXAxis = (maxX - minX) >= (maxZ - minZ);
+
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
@@ -53,8 +56,18 @@ public class transformer {
                     final BlockData finalizedDisplayData = displayData;
                     BlockDisplay display = gate.getWorld().spawn(pivotLoc, BlockDisplay.class, bd -> {
                         bd.setBlock(finalizedDisplayData);
-                        Vector3f blockOffset = new Vector3f(initialTranslation).add(0.0f, (float) ((1.0 - thickness) / 2.0), (float) ((1.0 - thickness) / 2.0));
-                        bd.setTransformation(new Transformation(blockOffset, new Quaternionf(), new Vector3f(1.0f, (float) thickness, (float) thickness), new Quaternionf()));
+
+                        // FIX: Calculate initial bounding offsets based on gate alignment direction
+                        float offsetPad = (float) ((1.0 - thickness) / 2.0);
+                        Vector3f blockOffset = isXAxis
+                                ? new Vector3f(initialTranslation).add(0.0f, offsetPad, offsetPad)
+                                : new Vector3f(initialTranslation).add(offsetPad, offsetPad, 0.0f);
+
+                        Vector3f scale = isXAxis
+                                ? new Vector3f(1.0f, (float) thickness, (float) thickness)
+                                : new Vector3f((float) thickness, (float) thickness, 1.0f);
+
+                        bd.setTransformation(new Transformation(blockOffset, new Quaternionf(), scale, new Quaternionf()));
                         bd.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
                         bd.setInterpolationDuration(1);
                         bd.setInterpolationDelay(0);
@@ -67,14 +80,25 @@ public class transformer {
         }
     }
 
-    public static void updateTransformations(Map<BlockDisplay, Vector3f> parts, Quaternionf rotationAngle, double thickness) {
+    public static void updateTransformations(Map<BlockDisplay, Vector3f> parts, Quaternionf rotationAngle, double thickness, boolean isXAxis) {
         parts.forEach((bd, initialTranslation) -> {
             Vector3f rotatedTranslation = new Vector3f(initialTranslation);
             rotationAngle.transform(rotatedTranslation);
-            Vector3f baseOffset = new Vector3f(0.0f, (float) ((1.0 - thickness) / 2.0), (float) ((1.0 - thickness) / 2.0));
+
+            float offsetPad = (float) ((1.0 - thickness) / 2.0);
+            Vector3f baseOffset = isXAxis
+                    ? new Vector3f(0.0f, offsetPad, offsetPad)
+                    : new Vector3f(offsetPad, offsetPad, 0.0f);
+
             rotationAngle.transform(baseOffset);
             Vector3f finalTranslation = rotatedTranslation.add(baseOffset);
-            bd.setTransformation(new Transformation(finalTranslation, rotationAngle, new Vector3f(1.0f, (float) thickness, (float) thickness), new Quaternionf()));
+
+            Vector3f scale = isXAxis
+                    ? new Vector3f(1.0f, (float) thickness, (float) thickness)
+                    : new Vector3f((float) thickness, (float) thickness, 1.0f);
+
+            bd.setTransformation(new Transformation(finalTranslation, rotationAngle, scale, new Quaternionf()));
         });
     }
+
 }

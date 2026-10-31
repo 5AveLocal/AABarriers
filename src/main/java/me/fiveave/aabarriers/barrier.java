@@ -8,6 +8,7 @@ import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Interaction;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.checkerframework.checker.nullness.qual.NonNull;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -88,7 +89,25 @@ public class barrier {
         if (gate.getWorld() == null) return;
 
         double thickness = 0.2;
-        Location pivotLoc = gate.getStart().clone().add(1.5, 0.5, 0.5);
+
+        // Determine layout axis alignment configuration
+        int deltaX = Math.abs(gate.getEnd().getBlockX() - gate.getStart().getBlockX());
+        int deltaZ = Math.abs(gate.getEnd().getBlockZ() - gate.getStart().getBlockZ());
+        boolean isXAxis = deltaX >= deltaZ;
+
+        // --- FIX: Shift pivot center 1 meter further back in the direction of the start position ---
+        Location pivotLoc = gate.getStart().clone();
+
+        if (isXAxis) {
+            // Find direction from start block towards end block on X axis
+            double modX = (gate.getStart().getBlockX() <= gate.getEnd().getBlockX()) ? -0.5 : 1.5;
+            pivotLoc.add(modX, 0.5, 0.5);
+        } else {
+            // Find direction from start block towards end block on Z axis
+            double modZ = (gate.getStart().getBlockZ() <= gate.getEnd().getBlockZ()) ? -0.5 : 1.5;
+            pivotLoc.add(0.5, 0.5, modZ);
+        }
+
         Map<BlockDisplay, Vector3f> barrierParts = activePersistentArms.get(gate.getKey());
 
         if (barrierParts == null) {
@@ -115,7 +134,6 @@ public class barrier {
         }
 
         // --- Inverted Physics Check ---
-        // Instantly remove physical barrier blocks when moving/opening to clear the path
         collisionmanager.setPhysicalBarriers(gate, Material.AIR);
 
         BukkitTask runningAnim = activeAnimationTasks.remove(gate.getKey());
@@ -123,10 +141,16 @@ public class barrier {
             runningAnim.cancel();
         }
 
+        // --- Inside setPersistentGateStateInternal in barrier.java ---
         final Map<BlockDisplay, Vector3f> finalParts = barrierParts;
         float initialAngleRad = gateAngles.getOrDefault(gate.getKey(), 0f);
-        float targetAngleRad = targetOpen ? (float) Math.toRadians(-90) : 0f;
+
+        // --- FIX: Standardize target open angle to ALWAYS be 90 degrees ---
+        float targetAngleRad = targetOpen ? (float) Math.toRadians(90) : 0f;
         float totalAngleDelta = targetAngleRad - initialAngleRad;
+
+        // --- FIX: Dynamically invert the rotation vector axis, NOT the angle ---
+        final Vector3f dynamicAxis = getDynamicAxis(gate, isXAxis);
 
         BukkitTask animationLoop = new BukkitRunnable() {
             int tick = 0;
@@ -142,8 +166,6 @@ public class barrier {
                     this.cancel();
                     gateAngles.put(gate.getKey(), targetAngleRad);
 
-                    // --- Solidify Barriers On Complete Close ---
-                    // Only place solid blocks when the gate arm returns flat down to 0 degrees
                     if (targetAngleRad == 0f) {
                         collisionmanager.setPhysicalBarriers(gate, Material.BARRIER);
                     }
@@ -163,13 +185,30 @@ public class barrier {
                 float dynamicCurrentAngle = initialAngleRad + (totalAngleDelta * progress);
                 gateAngles.put(gate.getKey(), dynamicCurrentAngle);
 
-                Quaternionf rotationAngle = new Quaternionf().rotationAxis(dynamicCurrentAngle, 0f, 0f, 1f);
-                transformer.updateTransformations(finalParts, rotationAngle, thickness);
+                // Rotates perfectly relative to the dynamically aligned orientation needle vectors
+                Quaternionf rotationAngle = new Quaternionf().rotationAxis(dynamicCurrentAngle, dynamicAxis);
+                transformer.updateTransformations(finalParts, rotationAngle, thickness, isXAxis);
             }
         }.runTaskTimer(plugin, 1L, 1L);
 
         activeAnimationTasks.put(gate.getKey(), animationLoop);
+
     }
+
+    private static @NonNull Vector3f getDynamicAxis(metadata gate, boolean isXAxis) {
+        final Vector3f dynamicAxis;
+        if (isXAxis) {
+            boolean extendsPositiveX = gate.getStart().getBlockX() <= gate.getEnd().getBlockX();
+            // Invert the Z axis based on whether the arm grows East or West
+            dynamicAxis = extendsPositiveX ? new Vector3f(0f, 0f, 1f) : new Vector3f(0f, 0f, -1f);
+        } else {
+            boolean extendsPositiveZ = gate.getStart().getBlockZ() <= gate.getEnd().getBlockZ();
+            // Invert the X axis based on whether the arm grows South or North
+            dynamicAxis = extendsPositiveZ ? new Vector3f(-1f, 0f, 0f) : new Vector3f(1f, 0f, 0f);
+        }
+        return dynamicAxis;
+    }
+
 
     public void forceResetGate(Location start, Location end) {
         metadata gate = new metadata(start, end);
