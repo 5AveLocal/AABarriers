@@ -1,0 +1,8 @@
+presets:
+  default:
+    # Timing interval in ticks for shifting/toggling between alternating light positions
+    flash_interval_ticks: 10
+    # Sound processing loops - format: <sound_name>,<volume>,<pitch>,<delay_ticks_until_next>
+    sounds:
+      - "block.note_block.harp,1.0,1.0,0"
+      - "block.note_block.harp,1.0,2.0,8"

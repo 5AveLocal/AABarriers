@@ -12,45 +12,94 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.util.StringUtil;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
-import static me.fiveave.aabarriers.main.AAB_HEAD;
+import static me.fiveave.aabarriers.main.*;
 
 public class cmds implements CommandExecutor, TabCompleter {
 
     private final barrier barrierManager;
+    private final warningsignal warningManager;
 
-    public cmds(barrier barrierManager) {
+    public cmds(barrier barrierManager, warningsignal warningManager) {
         this.barrierManager = barrierManager;
+        this.warningManager = warningManager;
     }
 
     @SuppressWarnings("NullableProblems")
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        // 1. Permission Check
         if (!sender.hasPermission("aabarriers.admin")) {
             sender.sendMessage(AAB_HEAD + ChatColor.RED + "You do not have permission to execute this command!");
             return true;
         }
 
-        // 2. Base Validation Check
         if (args.length == 0) {
-            sender.sendMessage(AAB_HEAD + ChatColor.RED + "Usage: /" + label + " [tempopen|open|close|reset] ...");
+            sender.sendMessage(AAB_HEAD + ChatColor.RED + "Usage: /" + label + " [tempopen|open|close|reset|warn|reload] ...");
             return true;
         }
 
         String sub = args[0].toLowerCase();
 
+        // Version 0.1.2: Processing structural hot-reload command routing profiles
+        if (sub.equals("reload")) {
+            plugin.reloadPluginConfigs();
+            sender.sendMessage(AAB_HEAD + ChatColor.GREEN + "All configurations have been successfully reloaded!");
+            return true;
+        }
+
+        // Warning sign tracking execution pipeline blocks
+        if (sub.equals("warn")) {
+            if (args.length < 6) {
+                sender.sendMessage(AAB_HEAD + ChatColor.RED + "Usage: /" + label + " warn <on/off> <warn_preset> <x1> <y1> <z1> [x2] [y2] [z2]");
+                return true;
+            }
+            String action = args[1].toLowerCase();
+            if (!action.equals("on") && !action.equals("off")) {
+                sender.sendMessage(AAB_HEAD + ChatColor.RED + "Action parameter must be 'on' or 'off'.");
+                return true;
+            }
+
+            String presetName = args[2];
+            World world = getTargetWorld(sender);
+            if (world == null) {
+                sender.sendMessage(AAB_HEAD + ChatColor.RED + "Error: Could not locate world context.");
+                return true;
+            }
+
+            try {
+                int x1 = parseCoordinate(sender, args[3], "x");
+                int y1 = parseCoordinate(sender, args[4], "y");
+                int z1 = parseCoordinate(sender, args[5], "z");
+                Location light1 = new Location(world, x1, y1, z1);
+                Location light2 = null;
+
+                if (args.length >= 9) {
+                    int x2 = parseCoordinate(sender, args[6], "x");
+                    int y2 = parseCoordinate(sender, args[7], "y");
+                    int z2 = parseCoordinate(sender, args[8], "z");
+                    light2 = new Location(world, x2, y2, z2);
+                }
+
+                if (action.equals("on")) {
+                    warningManager.startSignal(presetName, light1, light2);
+                    sender.sendMessage(AAB_HEAD + ChatColor.GREEN + "Warning signal activated using preset: " + ChatColor.YELLOW + presetName);
+                } else {
+                    warningManager.stopSignal(light1, light2);
+                    sender.sendMessage(AAB_HEAD + ChatColor.GREEN + "Warning signal deactivated.");
+                }
+            } catch (NumberFormatException e) {
+                sender.sendMessage(AAB_HEAD + ChatColor.RED + "Input Error: Invalid parameter coordinates entered.");
+            }
+            return true;
+        }
+
+        // --- Standard barrier logic engine paths ---
         if (!sub.equals("tempopen") && !sub.equals("open") && !sub.equals("close") && !sub.equals("reset")) {
             sender.sendMessage(AAB_HEAD + ChatColor.RED + "Unknown action parameter.");
             return true;
         }
 
-        // 3. Dynamic Argument Length Check
-        // reset needs 7 items, open/close needs 8 items, tempopen needs 9 items
         int requiredArgs = sub.equals("reset") ? 7 : (sub.equals("tempopen") ? 9 : 8);
         if (args.length < requiredArgs) {
             if (sub.equals("reset")) {
@@ -63,22 +112,12 @@ public class cmds implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        // 4. Determine target environment world context
-        World world;
-        if (sender instanceof Player) {
-            world = ((Player) sender).getWorld();
-        } else if (sender instanceof org.bukkit.command.BlockCommandSender) {
-            world = ((org.bukkit.command.BlockCommandSender) sender).getBlock().getWorld();
-        } else {
-            world = Bukkit.getWorlds().getFirst(); // Fallback for console executions
-        }
-
+        World world = getTargetWorld(sender);
         if (world == null) {
             sender.sendMessage(AAB_HEAD + ChatColor.RED + "Error: Could not locate world context.");
             return true;
         }
 
-        // 5. Parse Arguments securely with proper sub-command array offsets (+1 shift)
         try {
             int startX = parseCoordinate(sender, args[1], "x");
             int startY = parseCoordinate(sender, args[2], "y");
@@ -90,10 +129,9 @@ public class cmds implements CommandExecutor, TabCompleter {
             Location startLocation = new Location(world, startX, startY, startZ);
             Location endLocation = new Location(world, endX, endY, endZ);
 
-            // Execute immediate structural data storage reset if triggered
             if (sub.equals("reset")) {
                 barrierManager.forceResetGate(startLocation, endLocation);
-                sender.sendMessage(AAB_HEAD + ChatColor.GREEN + "Forced structural reset completed. Physical block parameters restored from configuration files.");
+                sender.sendMessage(AAB_HEAD + ChatColor.GREEN + "Forced structural reset completed.");
                 return true;
             }
 
@@ -111,12 +149,10 @@ public class cmds implements CommandExecutor, TabCompleter {
                 }
                 barrierManager.activateBarrierArm(startLocation, endLocation, rotSpeed, duration);
             } else {
-                // Persistent Open or Close toggle logic mapping
                 barrierManager.setPersistentGateState(startLocation, endLocation, rotSpeed, sub.equals("open"));
             }
 
             sender.sendMessage(AAB_HEAD + ChatColor.GREEN + "Barrier arm action executed successfully.");
-
         } catch (NumberFormatException e) {
             sender.sendMessage(AAB_HEAD + ChatColor.RED + "Input Error: Invalid parameter coordinates or timing digits entered.");
         }
@@ -124,9 +160,13 @@ public class cmds implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    /**
-     * Helper utility method to parse absolute numbers or relative tilde (~) values
-     */
+    private World getTargetWorld(CommandSender sender) {
+        if (sender instanceof Player) return ((Player) sender).getWorld();
+        if (sender instanceof org.bukkit.command.BlockCommandSender)
+            return ((org.bukkit.command.BlockCommandSender) sender).getBlock().getWorld();
+        return Bukkit.getWorlds().getFirst();
+    }
+
     private int parseCoordinate(CommandSender sender, String arg, String axis) {
         if (arg.startsWith("~")) {
             Location loc = null;
@@ -140,16 +180,12 @@ public class cmds implements CommandExecutor, TabCompleter {
                 else if (axis.equalsIgnoreCase("y")) base = loc.getBlockY();
                 else if (axis.equalsIgnoreCase("z")) base = loc.getBlockZ();
             }
-
             if (arg.length() == 1) return base;
             return base + Integer.parseInt(arg.substring(1));
         }
         return Integer.parseInt(arg);
     }
 
-    // =========================================================================
-    // Tab Completer Mechanism (Subcommand Routing)
-    // =========================================================================
     @SuppressWarnings("NullableProblems")
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
@@ -160,69 +196,70 @@ public class cmds implements CommandExecutor, TabCompleter {
         Block targetBlock = player.getTargetBlockExact(5);
 
         if (args.length == 1) {
-            suggestions.addAll(Arrays.asList("tempopen", "open", "close", "reset"));
+            suggestions.addAll(Arrays.asList("tempopen", "open", "close", "reset", "warn", "reload"));
             StringUtil.copyPartialMatches(args[0], suggestions, completions);
             return completions;
         }
 
         String sub = args[0].toLowerCase();
-        if (!sub.equals("tempopen") && !sub.equals("open") && !sub.equals("close") && !sub.equals("reset")) {
+
+        // Handle reload suggestions early
+        if (sub.equals("reload")) {
             return Collections.emptyList();
         }
 
-        switch (args.length) {
-            case 2: // startX
-                suggestions.add("~");
-                if (targetBlock != null) {
-                    suggestions.add(String.valueOf(targetBlock.getX()));
-                    suggestions.add(targetBlock.getX() + " " + targetBlock.getY() + " " + targetBlock.getZ());
-                }
-                break;
-            case 3: // startY
-                suggestions.add("~");
-                if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getY()));
-                break;
-            case 4: // startZ
-                suggestions.add("~");
-                if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getZ()));
-                break;
-            case 5: // endX
-                suggestions.add("~");
-                if (targetBlock != null) {
-                    suggestions.add(String.valueOf(targetBlock.getX()));
-                    suggestions.add(targetBlock.getX() + " " + targetBlock.getY() + " " + targetBlock.getZ());
-                }
-                break;
-            case 6: // endY
-                suggestions.add("~");
-                if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getY()));
-                break;
-            case 7: // endZ
-                suggestions.add("~");
-                if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getZ()));
-                break;
-            case 8: // rotSpeed (Only applicable to moving variants)
-                if (!sub.equals("reset")) suggestions.addAll(Arrays.asList("10", "20", "40", "[rotSpeed (Ticks)]"));
-                break;
-            case 9: // duration (Only applicable to tempopen)
-                if (sub.equals("tempopen")) {
-                    suggestions.addAll(Arrays.asList("60", "120", "240", "[duration (Ticks)]"));
-                    try {
-                        int speed = Integer.parseInt(args[7]);
-                        suggestions.add(String.valueOf(speed * 2));
-                    } catch (NumberFormatException ignored) {
+        if (sub.equals("warn")) {
+            switch (args.length) {
+                case 2 -> suggestions.addAll(Arrays.asList("on", "off"));
+                case 3 -> {
+                    if (warnPresets != null && warnPresets.dataconfig != null && warnPresets.dataconfig.contains("presets")) {
+                        suggestions.addAll(Objects.requireNonNull(warnPresets.dataconfig.getConfigurationSection("presets")).getKeys(false));
+                    } else {
+                        suggestions.add("default");
                     }
                 }
-                break;
+                case 4, 7 -> {
+                    suggestions.add("~");
+                    if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getX()));
+                }
+                case 5, 8 -> {
+                    suggestions.add("~");
+                    if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getY()));
+                }
+                case 6, 9 -> {
+                    suggestions.add("~");
+                    if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getZ()));
+                }
+            }
+            StringUtil.copyPartialMatches(args[args.length - 1], suggestions, completions);
+            return completions;
         }
-
+        if (!sub.equals("tempopen") && !sub.equals("open") && !sub.equals("close") && !sub.equals("reset")) {
+            return Collections.emptyList();
+        }
+        switch (args.length) {
+            case 2, 5 -> {
+                suggestions.add("~");
+                if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getX()));
+            }
+            case 3, 6 -> {
+                suggestions.add("~");
+                if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getY()));
+            }
+            case 4, 7 -> {
+                suggestions.add("~");
+                if (targetBlock != null) suggestions.add(String.valueOf(targetBlock.getZ()));
+            }
+            case 8 -> {
+                if (!sub.equals("reset")) suggestions.addAll(Arrays.asList("10", "20", "40", "[rotSpeed]"));
+            }
+            case 9 -> {
+                if (sub.equals("tempopen")) {
+                    suggestions.addAll(Arrays.asList("60", "120", "240", "[duration]"));
+                }
+            }
+        }
         StringUtil.copyPartialMatches(args[args.length - 1], suggestions, completions);
-        completions.sort((s1, s2) -> {
-            if (s1.startsWith("[") || s1.startsWith("<")) return 1;
-            if (s2.startsWith("[") || s2.startsWith("<")) return -1;
-            return s1.compareToIgnoreCase(s2);
-        });
-
         return completions;
     }
 }

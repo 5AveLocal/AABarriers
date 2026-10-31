@@ -15,8 +15,19 @@ public class metadata {
                 end.getBlockX() + "_" + end.getBlockY() + "_" + end.getBlockZ();
     }
 
-    public Location getStart() { return start; }
-    public Location getEnd() { return end; }
-    public String getKey() { return key; }
-    public World getWorld() { return start.getWorld(); }
+    public Location getStart() {
+        return start;
+    }
+
+    public Location getEnd() {
+        return end;
+    }
+
+    public String getKey() {
+        return key;
+    }
+
+    public World getWorld() {
+        return start.getWorld();
+    }
 }
